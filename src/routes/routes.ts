@@ -3,55 +3,75 @@ import User from "../models/User"; // Import the User model
 
 const router = express.Router();
 
+interface ExcelSheet {
+  [sheetName: string]: Array<Record<string, any>>; // Each sheet is an array of rows
+}
 interface ExcelData {
-    filename: string;
-    sheetName: string;
-    data: Array<Record<string, any>>; // Represents rows in the Excel sheet
+  filename: string;
+  sheets: ExcelSheet;
 }
 
 router.post("/upload", async (req: Request, res: any) => {
   try {
     console.log("Received Request Body:", req.body);
-    const usersData: ExcelData = req.body; // Assuming JSON is sent in request body
-  
-    if (!usersData || !usersData.filename || !usersData.data) {
+    const { filename, sheets }: ExcelData = req.body; // Assuming JSON is sent in request body
+
+    if (!filename || !sheets || Object.keys(sheets).length === 0) {
       return res.status(400).json({ error: "Invalid file data received" });
     }
-  
-    console.log("Received Excel Data:", usersData);
 
-    if (!Array.isArray(usersData) || usersData.length === 0) {
-      return res.status(400).json({ message: "Invalid or empty data" });
-    }
+    console.log("Processing Excel File:", filename);
 
-    const currentMonth = new Date().getMonth();
-    const currentYear = new Date().getFullYear();
+    let usersToSave: any[] = [];
 
-    const usersToSave = usersData.map((user) => {
-      const { Name, Amount, Date, Verified, filename } = user;
+     // 🔥 Iterate over all sheets
+     Object.entries(sheets).forEach(([sheetName, data]) => {
+      console.log(`Processing Sheet: ${sheetName}`);
 
-      // Validation checks
-      const isValidName = typeof Name === "string" && Name.trim() !== "";
-      const isValidAmount = typeof Amount === "number" && Amount > 0;
+      if (!Array.isArray(data) || data.length === 0) {
+        console.log(`Skipping empty sheet: ${sheetName}`);
+        return;
+      }
 
-      const parsedDate = new Date(Date);
-      const isValidDate = !isNaN(parsedDate.getTime()) && parsedDate.getMonth() === currentMonth && parsedDate.getFullYear() === currentYear;
+      const sheetUsers = data.map((row) => {
+        const { Name, Amount, Date: dateValue } = row;
 
-      console.log(`Validating user: ${Name}`);
-      console.log(`Name Valid: ${isValidName}`);
-      console.log(`Amount Valid: ${isValidAmount}`);
-      console.log(`Date Valid: ${isValidDate}`);
+        // Validation checks
+        const isValidName = typeof Name === "string" && Name.trim() !== "";
+        const numericAmount = parseFloat(Amount); 
+        const isValidAmount = !isNaN(numericAmount) && numericAmount > 0;
+        const parseCustomDate = (dateStr: string) => {
+          const parts = dateStr.split("/");
+          if (parts.length === 3) {
+            const [day, month, year] = parts;
+            return new Date(`${year}-${month}-${day}`); // Convert to "YYYY-MM-DD"
+          }
+          return null; // Return null for invalid formats
+        };
+        const parsedDate = dateValue ? parseCustomDate(dateValue) : null;
+        const isValidDate = parsedDate instanceof Date && !isNaN(parsedDate.getTime());
 
+        console.log(`Validating user: ${Name}`);
+        console.log(`Name Valid: ${isValidName}`);
+        console.log(`Amount Valid: ${isValidAmount}`);
+        console.log(`Date Valid: ${isValidDate}`);
 
-      return new User({
-        name: Name,
-        amount: isValidAmount ? Amount : 0,
-        dob: isValidDate ?  parsedDate  : new Date(),
-        verified: isValidName && isValidAmount && isValidDate,
-        filename: filename || "NoFilename"
+        return new User({
+          name: Name,
+          amount: isValidAmount ? numericAmount  : 0,
+          dob: isValidDate ? parsedDate : new Date(),
+          verified: isValidName && isValidAmount && isValidDate,
+          filename: filename,
+          sheetName: sheetName, 
+        });
       });
+
+      usersToSave = [...usersToSave, ...sheetUsers];
     });
 
+    if (usersToSave.length === 0) {
+      return res.status(400).json({ message: "No valid data found in the uploaded file" });
+    }
     await User.insertMany(usersToSave);
 
     res.status(201).json({ message: "Users uploaded successfully" });

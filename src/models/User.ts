@@ -6,6 +6,7 @@ export interface IUser extends Document {
   dob: Date;
   verified: boolean;
   filename: string;
+  sheetName: string;
 }
 
 const UserSchema = new Schema<IUser>({
@@ -14,6 +15,7 @@ const UserSchema = new Schema<IUser>({
   dob: { type: Date, required: true },
   verified: { type: Boolean, default: false },
   filename: { type: String, required: true },
+  sheetName: { type: String, required: true}
 });
 
 export default mongoose.model<IUser>("User", UserSchema);
